@@ -1,0 +1,23 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+*.db
+*.db-shm
+*.db-wal
+*.log
+.vscode
+.idea
+*.md
+.pytest_cache
+
+# Secrets & runtime data — must never be baked into the image.
+.env
+.env.local
+data/
+
+# NOTE: .env.docker is intentionally INCLUDED in the build context — it
+# holds non-secret configuration only and the app reads it as a fallback
+# env file. Never put credentials in .env.docker; set them in Coolify's
+# environment panel (process env always wins).

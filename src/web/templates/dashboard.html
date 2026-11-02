@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>控制台 - PolyGTD</title>
+<link rel="stylesheet" href="/static/style.css?v=__ASSET_VERSION__">
+</head>
+<body>
+<nav>
+  <span class="brand">PolyGTD</span>
+  <a href="/" class="active">控制台</a>
+  <a href="/trades">交易记录</a>
+  <a href="/config">策略配置</a>
+  <a href="/backtest">回测</a>
+  <div class="nav-right">
+    <span id="auth-area" class="nav-auth"></span>
+    <span class="live-dot" id="live-dot"></span>
+    <span id="live-label">连接中</span>
+    <span id="clock" class="mono"></span>
+  </div>
+</nav>
+
+<div class="container">
+  <!-- Emergency stop -->
+  <div class="control-bar" id="control-bar">
+    <div class="control-status">
+      <span class="control-dot running" id="control-dot"></span>
+      <span class="control-label" id="control-label">策略运行中</span>
+      <span class="control-meta" id="control-meta"></span>
+    </div>
+    <div class="control-actions">
+      <button class="btn btn-danger" id="stop-btn" onclick="stopStrategy()">紧急停止</button>
+      <button class="btn btn-primary" id="start-btn" hidden onclick="startStrategy()">恢复运行</button>
+    </div>
+  </div>
+  <div id="control-banner"></div>
+
+  <!-- Summary -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">今日盈亏 (UTC)</div>
+      <div class="stat-value" id="today-pnl">--</div>
+      <div class="stat-sub" id="today-rounds">-- 轮</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">累计盈亏</div>
+      <div class="stat-value" id="total-pnl">--</div>
+      <div class="stat-sub" id="total-rounds">-- 轮已结算</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">胜率</div>
+      <div class="stat-value purple" id="win-rate">--</div>
+      <div class="stat-sub" id="win-loss">--</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">当前窗口剩余</div>
+      <div class="stat-value orange" id="window-remain">--</div>
+      <div class="stat-sub" id="window-phase">--</div>
+    </div>
+  </div>
+
+  <!-- BTC price card -->
+  <div class="price-card">
+    <div class="price-head">
+      <a class="price-title disabled" id="market-link" target="_blank"
+         rel="noopener noreferrer" title="市场加载中">BTC / USDT · 15m Up/Down<span class="ext">↗</span></a>
+      <div>
+        <span class="badge pending" id="phase-badge">--</span>
+        <span class="badge pending" id="gate-badge">--</span>
+      </div>
+    </div>
+    <div class="price-bar-wrap">
+      <div class="price-bar-label">
+        <span>UP <b id="up-price">--</b></span>
+        <span>DOWN <b id="down-price">--</b></span>
+      </div>
+      <div class="price-bar">
+        <div class="bar-up" id="bar-up" style="width:50%"></div>
+        <div class="bar-down" id="bar-down" style="width:50%"></div>
+      </div>
+    </div>
+    <div class="tokens">
+      <div class="token-item up">
+        <div class="token-label">UP 概率</div>
+        <div class="token-price green" id="up-pct">--</div>
+      </div>
+      <div class="token-item down">
+        <div class="token-label">DOWN 概率</div>
+        <div class="token-price red" id="down-pct">--</div>
+      </div>
+    </div>
+    <div class="gate-row">
+      <span>Binance <b id="binance">--</b></span>
+      <span>基线 <b id="baseline">--</b></span>
+      <span>漂移 <b id="drift">--</b></span>
+      <span>轮次 <b id="round-ts">--</b></span>
+      <span>模式 <b id="trading-mode">--</b></span>
+      <span>跳过原因 <b id="skip-reason">无</b></span>
+    </div>
+  </div>
+
+  <!-- External signals / risk gates -->
+  <div class="section">
+    <h2>信号 / 风控闸门</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>项目</th><th>数值</th><th>说明</th></tr></thead>
+        <tbody id="signal-tbody">
+          <tr><td colspan="3" class="no-data">等待首次决策...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Position -->
+  <div class="section">
+    <h2>当前持仓</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>方向</th><th>数量</th><th>均价</th><th>成本</th><th>中间价</th><th>浮动盈亏</th><th>止盈目标</th></tr>
+        </thead>
+        <tbody id="position-tbody"><tr><td colspan="7" class="no-data">无持仓</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Tiers -->
+  <div class="section">
+    <h2>分层状态</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>层</th><th>状态</th><th>名义金额</th><th>已成交/预期</th><th>均价</th><th>服务端订单</th></tr>
+        </thead>
+        <tbody id="tiers-tbody"><tr><td colspan="6" class="no-data">本轮无分层数据</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Open orders -->
+  <div class="section">
+    <h2>当前挂单</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>层</th><th>方向</th><th>价格</th><th>数量</th><th>已成交</th><th>状态</th><th>存活</th></tr>
+        </thead>
+        <tbody id="orders-tbody"><tr><td colspan="7" class="no-data">无挂单</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Recent fills -->
+  <div class="section">
+    <h2>最近成交</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>时间 (UTC)</th><th>轮次</th><th>层</th><th>方向</th><th>价格</th><th>数量</th><th>金额</th></tr>
+        </thead>
+        <tbody id="fills-tbody"><tr><td colspan="7" class="no-data">暂无成交</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<footer>PolyGTD · 数据每 3 秒刷新 · 时间均为 UTC</footer>
+
+<!-- In-page confirm dialog (native <dialog>, styled to the dashboard theme) -->
+<dialog class="modal" id="confirm-dialog">
+  <form method="dialog">
+    <div class="modal-head">
+      <span class="modal-icon" id="confirm-icon">!</span>
+      <h3 id="confirm-title">确认操作</h3>
+    </div>
+    <div class="modal-body" id="confirm-body"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" value="cancel">取消</button>
+      <button class="btn btn-danger" id="confirm-ok" value="ok">确定</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Transient result notifications -->
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (n, d = 2) => (n === null || n === undefined || isNaN(n)) ? '--' : Number(n).toFixed(d);
+const money = (n) => (n === null || n === undefined || isNaN(n)) ? '--' : (n >= 0 ? '+$' : '-$') + Math.abs(n).toFixed(2);
+const cls = (n) => (n > 0 ? 'green' : n < 0 ? 'red' : '');
+const utc = (ts) => ts ? new Date(ts * 1000).toISOString().slice(11, 19) : '--';
+// 轮次列附带方向：UP/DOWN 由 fill.token_id 匹配 round 的 up/down token 得出。
+const outcomePill = (o) => {
+  const v = (o || '').toUpperCase();
+  if (v !== 'UP' && v !== 'DOWN') return '';
+  return ` <span class="pill ${v === 'UP' ? 'buy' : 'sell'}">${v}</span>`;
+};
+const iso = (s) => s ? new Date(s).toISOString().replace('T', ' ').slice(0, 19) : '--';
+// 秒 → "14m 19s"（不足一分钟只显示秒），用于窗口剩余时间。
+const dur = (s) => {
+  s = Math.max(0, Math.round(Number(s) || 0));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return m > 0 ? `${m}m ${String(r).padStart(2, '0')}s` : `${r}s`;
+};
+
+function setLive(ok) {
+  $('live-dot').className = 'live-dot' + (ok ? '' : ' offline');
+  $('live-label').textContent = ok ? '在线' : '离线';
+}
+
+// 卡片标题指向当前轮次对应的 Polymarket 实时市场页。
+function renderMarketLink(slug) {
+  const el = $('market-link');
+  if (slug) {
+    el.href = 'https://polymarket.com/event/' + encodeURIComponent(slug);
+    el.classList.remove('disabled');
+    el.title = '在 Polymarket 查看实时市场';
+  } else {
+    el.removeAttribute('href');
+    el.classList.add('disabled');
+    el.title = '市场加载中';
+  }
+}
+
+async function getJSON(path) {
+  const r = await fetch(path, { cache: 'no-store' });
+  if (r.status === 401) {
+    location.href = '/login?next=' + encodeURIComponent(location.pathname);
+    throw new Error('需要登录');
+  }
+  if (!r.ok) throw new Error(path + ' ' + r.status);
+  return await r.json();
+}
+
+/* ── Emergency stop ─────────────────────────────────────────────────── */
+let AUTH = null;
+
+function updateControlAvailability() {
+  const ready = !!(AUTH && AUTH.credentials_configured);
+  $('stop-btn').disabled = !ready;
+  $('start-btn').disabled = !ready;
+  if (!ready) {
+    $('control-meta').textContent = '未设置 WEB_PASSWORD，控制功能不可用';
+  }
+}
+
+function renderKillswitch(ks) {
+  const active = !!(ks && ks.active);
+  const dot = $('control-dot');
+  const label = $('control-label');
+  const meta = $('control-meta');
+  const bar = $('control-bar');
+
+  $('stop-btn').hidden = active;
+  $('start-btn').hidden = !active;
+
+  if (active) {
+    dot.className = 'control-dot stopped';
+    label.textContent = '策略已紧急停止';
+    const since = ks.since
+      ? new Date(ks.since * 1000).toLocaleString('zh-CN', { hour12: false })
+      : '--';
+    meta.textContent = `停止于 ${since}${ks.reason ? ' · ' + ks.reason : ''}`;
+    bar.classList.add('stopped');
+    $('control-banner').innerHTML =
+      '<div class="alert warn"><b>策略已停止。</b>不会开新仓、不会补仓、不会止盈；' +
+      '未成交挂单已撤销。<b>已有持仓不会自动卖出</b>，需要手动处理。</div>';
+  } else {
+    dot.className = 'control-dot running';
+    label.textContent = '策略运行中';
+    meta.textContent = '';
+    bar.classList.remove('stopped');
+    $('control-banner').innerHTML = '';
+  }
+  updateControlAvailability();
+}
+
+async function loadAuth() {
+  try { AUTH = await getJSON('/api/auth/me'); } catch (e) { AUTH = null; }
+  updateControlAvailability();
+}
+
+function confirmDialog(opts) {
+  const dlg = $('confirm-dialog');
+  const danger = opts.danger !== false;
+  $('confirm-title').textContent = opts.title || '确认操作';
+  const icon = $('confirm-icon');
+  icon.textContent = danger ? '!' : '✓';
+  icon.className = 'modal-icon' + (danger ? '' : ' ok');
+  const body = $('confirm-body');
+  body.innerHTML = '';
+  (opts.lines || []).forEach((line) => {
+    const p = document.createElement('p');
+    const text = (line && typeof line === 'object') ? line.text : String(line);
+    const tone = (line && typeof line === 'object') ? line.tone : '';
+    p.textContent = text;
+    if (tone) p.className = tone;
+    body.appendChild(p);
+  });
+  const ok = $('confirm-ok');
+  ok.textContent = opts.okText || '确定';
+  ok.className = 'btn ' + (danger ? 'btn-danger' : 'btn-primary');
+  dlg.returnValue = 'cancel';
+  dlg.showModal();
+  return new Promise((resolve) => {
+    dlg.addEventListener('close', () => resolve(dlg.returnValue === 'ok'), { once: true });
+  });
+}
+
+function showToast(text, kind) {
+  const wrap = $('toast-wrap');
+  const el = document.createElement('div');
+  el.className = 'toast' + (kind === 'err' ? ' err' : '');
+  el.textContent = text;
+  wrap.appendChild(el);
+  setTimeout(() => el.classList.add('out'), 2800);
+  setTimeout(() => el.remove(), 3200);
+}
+
+async function controlCall(path, body) {
+  try {
+    const r = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+    if (r.status === 401) {
+      location.href = '/login?next=' + encodeURIComponent(location.pathname);
+      return;
+    }
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
+    await refreshStatus();
+    if (path.endsWith('/stop')) {
+      showToast('已紧急停止，撤销挂单 ' + (data.cancelled_orders || 0) + ' 笔。');
+    } else {
+      showToast('已恢复运行。');
+    }
+  } catch (e) {
+    showToast('操作失败：' + e.message, 'err');
+  }
+}
+
+async function stopStrategy() {
+  const ok = await confirmDialog({
+    title: '紧急停止策略？',
+    okText: '紧急停止',
+    danger: true,
+    lines: [
+      '停止开仓 / 补仓 / 止盈，撤销未成交挂单；已有持仓不会自动卖出。',
+      { text: '重新部署容器后停止状态会丢失（data 目录未挂持久卷）。', tone: 'warn' },
+    ],
+  });
+  if (!ok) return;
+  await controlCall('/api/control/stop', { reason: 'dashboard' });
+}
+
+async function startStrategy() {
+  const ok = await confirmDialog({
+    title: '恢复运行？',
+    okText: '恢复运行',
+    danger: false,
+    lines: ['策略会重新开始寻找入场和止盈机会。'],
+  });
+  if (!ok) return;
+  await controlCall('/api/control/start', {});
+}
+
+function renderSignals(sig, trade) {
+  const body = $('signal-tbody');
+  const tradeRow = trade ? [
+    '信号纸盘规则',
+    `价格 ${Number(trade.price_min).toFixed(2)}–${Number(trade.price_max).toFixed(2)} · 5m≥${Number(trade.m5_min_confirm).toFixed(2)}`,
+    `仓位 $${Number(trade.stake_usd).toFixed(2)} · TP ${(Number(trade.tp_pct)*100).toFixed(0)}% · SL ${(Number(trade.sl_pct)*100).toFixed(0)}% · 尾盘 ${Number(trade.time_exit_s).toFixed(0)}s · 本轮 ${trade.round_trades || 0} 笔 / PnL ${Number(trade.round_pnl || 0) >= 0 ? '+' : ''}${Number(trade.round_pnl || 0).toFixed(3)} · ${trade.paper_only ? '纸盘' : ''}`
+  ] : null;
+  if (!sig || !sig.ts) {
+    body.innerHTML = tradeRow
+      ? `<tr><td>${tradeRow[0]}</td><td class="mono">${tradeRow[1]}</td><td class="muted">${tradeRow[2]}</td></tr>`
+      : '<tr><td colspan="3" class="no-data">等待首次决策...</td></tr>';
+    return;
+  }
+  const val = (v, d = 4) => (v === null || v === undefined || isNaN(v)) ? '--' : Number(v).toFixed(d);
+  const pct = (v, d = 2) => (v === null || v === undefined || isNaN(v)) ? '--' : (Number(v) * 100).toFixed(d) + '%';
+  const reasons = (sig.reasons && sig.reasons.length) ? sig.reasons.join(', ') : '无';
+  const tf = sig.tf5m || {};
+  const macro = sig.macro || {};
+  const ev = sig.event || {};
+  const rows = [
+    ['结论', sig.would_block ? '<span class="red">拦截</span>' : '<span class="green">放行</span>',
+      `模式=${sig.mode || '--'} · ${sig.kind || '--'} ${sig.side || ''} · 原因: ${reasons}`],
+    ['数字期权模型', `公允 ${val(sig.fair_held, 3)} / mid ${val(sig.token_mid, 3)}`,
+      `edge=${val(sig.edge, 4)} · adverse z=${val(sig.adverse_z, 2)} · σ=${val(sig.sigma_1m_pct, 3)}%/min`],
+    ['趋势/波动', `trend=${val(sig.trend_score, 3)} (against ${val(sig.trend_against, 2)})`,
+      `RSI=${val(sig.rsi, 1)} · ATR=${val(sig.atr_pct, 3)}% · bars=${sig.regime_bars || 0}`],
+    ['盘口', `spread=${val(sig.spread, 4)} · imbalance=${val(sig.book_imbalance, 2)}`,
+      `CVD 占比=${val(sig.cvd_ratio, 2)} · 60s 主动买卖流`],
+    ['5m 确认', tf.available ? `UP ${val(tf.up_mid, 3)} / DOWN ${val(tf.down_mid, 3)}` : '不可用',
+      tf.available ? `UP 60s ${pct(tf.up_change_60)} · DOWN 60s ${pct(tf.down_change_60)} · confirm=${val(tf.confirm, 2)}` : '数据缺失时失败开放'],
+    ['宏观', `funding=${val(macro.funding_rate, 5)} · OI ${val(macro.oi_change_pct, 2)}%`,
+      `DVOL=${val(macro.dvol, 1)} (${val(macro.dvol_change_pct, 1)}%) · 数据缺失时失败开放`],
+    ['事件', ev.event_blackout ? String(ev.event_name || '黑名单') : '无',
+      ev.event_end ? '结束 ' + new Date(ev.event_end * 1000).toLocaleString('zh-CN', { hour12: false }) : '未配置事件日历'],
+  ];
+  if (tradeRow) rows.push(tradeRow);
+  body.innerHTML = rows.map(([a, b, c]) =>
+    `<tr><td>${a}</td><td class="mono">${b}</td><td class="muted">${c}</td></tr>`
+  ).join('');
+}
+
+function renderStatus(s) {
+  renderKillswitch(s.killswitch);
+  renderSignals(s.signals, s.signal_trade);
+  renderMarketLink(s.slug);
+
+  // window
+  const w = s.window || {};
+  $('window-remain').textContent = dur(w.remain_s);
+  const phaseMap = { IN_T1: 'T1 可入场', PAST_T1: '已过 T1', END: '即将结算', SIGNAL: '信号可入场' };
+  $('window-phase').textContent = (phaseMap[w.phase] || '--') + ' · ' + Math.round((w.period_s || 0) / 60) + ' 分钟窗口';
+  $('phase-badge').textContent = phaseMap[w.phase] || '--';
+  $('phase-badge').className = 'badge ' + ((w.phase || '').toLowerCase());
+
+  // gate
+  const g = s.gate || {};
+  $('gate-badge').textContent = g.state || '--';
+  $('gate-badge').className = 'badge ' + ((g.state || 'pending').toLowerCase());
+  $('binance').textContent = fmt(g.binance, 1);
+  $('baseline').textContent = fmt(g.baseline, 1);
+  $('drift').textContent = g.drift === null || g.drift === undefined ? '--' : (g.drift * 100).toFixed(3) + '%';
+  $('drift').className = g.state === 'FAIL' ? 'red' : (g.state === 'PASS' ? 'green' : '');
+  $('round-ts').textContent = s.round_start_ts ? utc(s.round_start_ts) : '--';
+  const tm = s.trading_mode || {};
+  const modeTxt = tm.effective === 'paper' ? '纸盘' : (tm.effective === 'live' ? '实盘' : '--');
+  $('trading-mode').textContent = modeTxt + (tm.locked ? '（本轮已锁定）' : '');
+  $('trading-mode').className = tm.effective === 'paper' ? 'green' : 'orange';
+  $('skip-reason').textContent = s.skip_reason || '无';
+  $('skip-reason').className = s.skip_reason ? 'orange' : 'muted';
+
+  // prices
+  const p = s.prices || {};
+  $('up-price').textContent = fmt(p.up_mid, 4);
+  $('down-price').textContent = fmt(p.down_mid, 4);
+  const upPct = (p.up_mid || 0) * 100, downPct = (p.down_mid || 0) * 100;
+  $('up-pct').textContent = fmt(upPct, 1) + '%';
+  $('down-pct').textContent = fmt(downPct, 1) + '%';
+  const total = (p.up_mid || 0) + (p.down_mid || 0);
+  const upShare = total > 0 ? (p.up_mid / total) * 100 : 50;
+  $('bar-up').style.width = upShare.toFixed(1) + '%';
+  $('bar-down').style.width = (100 - upShare).toFixed(1) + '%';
+
+  // position
+  const pos = s.position;
+  const pBody = $('position-tbody');
+  if (!pos || !(pos.qty > 0)) {
+    pBody.innerHTML = '<tr><td colspan="7" class="no-data">无持仓</td></tr>';
+  } else {
+    const pnlCls = cls(pos.upnl_usd);
+    const sideCls = pos.side === 'UP' ? 'buy' : 'sell';
+    pBody.innerHTML = `<tr>
+      <td><span class="pill ${sideCls}">${pos.side || '--'}</span></td>
+      <td class="mono">${fmt(pos.qty, 2)}</td>
+      <td class="mono">${fmt(pos.avg_cost, 4)}</td>
+      <td class="mono">$${fmt(pos.cost, 2)}</td>
+      <td class="mono">${fmt(pos.mid, 4)}</td>
+      <td class="mono ${pnlCls}">${money(pos.upnl_usd)} (${fmt((pos.upnl_pct || 0) * 100, 1)}%)</td>
+      <td class="mono">${pos.tp_target === null || pos.tp_target === undefined ? '--' : fmt(pos.tp_target, 4)}</td>
+    </tr>`;
+  }
+
+  // tiers
+  const tBody = $('tiers-tbody');
+  if (pos && pos.tiers && pos.tiers.length) {
+    tBody.innerHTML = pos.tiers.map(t => `<tr>
+      <td>T${t.tier}</td>
+      <td><span class="pill ${t.status}">${t.status}</span></td>
+      <td class="mono">$${fmt(t.notional, 2)}</td>
+      <td class="mono">${fmt(t.size_filled, 2)} / ${fmt(t.size_expected, 2)}</td>
+      <td class="mono">${t.avg_fill_price === null || t.avg_fill_price === undefined ? '--' : fmt(t.avg_fill_price, 4)}</td>
+      <td class="mono muted">${t.server_order_id ? t.server_order_id.slice(0, 16) : '--'}</td>
+    </tr>`).join('');
+  } else {
+    tBody.innerHTML = '<tr><td colspan="6" class="no-data">本轮无分层数据</td></tr>';
+  }
+
+  // open orders
+  const oBody = $('orders-tbody');
+  if (s.orders && s.orders.length) {
+    oBody.innerHTML = s.orders.map(o => `<tr>
+      <td>${o.tier}</td>
+      <td><span class="pill ${o.side === 'BUY' ? 'buy' : 'sell'}">${o.side}</span></td>
+      <td class="mono">${fmt(o.price, 4)}</td>
+      <td class="mono">${fmt(o.size, 2)}</td>
+      <td class="mono">${fmt(o.size_matched, 2)}</td>
+      <td><span class="pill ${o.status}">${o.status}</span></td>
+      <td class="mono muted">${Math.round(o.age_s || 0)}s</td>
+    </tr>`).join('');
+  } else {
+    oBody.innerHTML = '<tr><td colspan="7" class="no-data">无挂单</td></tr>';
+  }
+}
+
+function renderFills(fills) {
+  const body = $('fills-tbody');
+  if (!fills || !fills.length) {
+    body.innerHTML = '<tr><td colspan="7" class="no-data">暂无成交</td></tr>';
+    return;
+  }
+  body.innerHTML = fills.slice(0, 15).map(f => `<tr>
+    <td class="mono">${f.ts_ms ? new Date(f.ts_ms).toISOString().slice(11, 19) : '--'}</td>
+    <td class="mono">${utc(f.round_start_ts)}${outcomePill(f.outcome)}</td>
+    <td>${f.tier || '--'}</td>
+    <td><span class="pill ${f.side === 'BUY' ? 'buy' : 'sell'}">${f.side}</span></td>
+    <td class="mono">${fmt(f.price, 4)}</td>
+    <td class="mono">${fmt(f.size, 2)}</td>
+    <td class="mono">$${fmt(f.notional, 2)}</td>
+  </tr>`).join('');
+}
+
+function renderStats(stats) {
+  if (!stats) return;
+  const today = stats.today_pnl_usd || 0;
+  $('today-pnl').textContent = money(today);
+  $('today-pnl').className = 'stat-value ' + cls(today);
+  $('today-rounds').textContent = (stats.today_rounds || 0) + ' 轮已结算';
+
+  const total = stats.total_pnl_usd || 0;
+  $('total-pnl').textContent = money(total);
+  $('total-pnl').className = 'stat-value ' + cls(total);
+  $('total-rounds').textContent = (stats.closed_rounds || 0) + ' 轮已结算 · ' + (stats.open_rounds || 0) + ' 轮未平';
+
+  $('win-rate').textContent = stats.win_rate === null ? '--' : (stats.win_rate * 100).toFixed(1) + '%';
+  $('win-loss').textContent = `${stats.wins || 0} 胜 / ${stats.losses || 0} 负`;
+}
+
+async function refreshStatus() {
+  try {
+    const s = await getJSON('/api/status');
+    renderStatus(s);
+    setLive(true);
+  } catch (e) {
+    setLive(false);
+  }
+}
+
+async function refreshTrades() {
+  try {
+    const d = await getJSON('/api/trades?limit=100');
+    renderStats(d.stats);
+    renderFills(d.fills);
+  } catch (e) { /* status poll handles the indicator */ }
+}
+
+$('clock').textContent = new Date().toISOString().slice(11, 19) + ' UTC';
+setInterval(() => { $('clock').textContent = new Date().toISOString().slice(11, 19) + ' UTC'; }, 1000);
+
+loadAuth();
+refreshStatus();
+refreshTrades();
+setInterval(refreshStatus, 3000);
+setInterval(refreshTrades, 10000);
+</script>
+<script src="/static/auth-nav.js?v=__ASSET_VERSION__"></script>
+</body>
+</html>
