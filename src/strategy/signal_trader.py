@@ -746,16 +746,20 @@ class SignalTrader:
         mid = _fs(self._pc.get_midpoint(token), 0.0)
         best_bid = _fs(self._pc.best_bid.get(token, 0.0), 0.0)
         best_ask = _fs(self._pc.best_ask.get(token, 0.0), 0.0)
-        last = _fs(self._pc.last_trade_price.get(token, 0.0), 0.0)
         if mid <= 0 and best_bid <= 0:
             return
 
         # TP first (it can only be at/above the entry).  A resting maker
-        # sell fills when the BID reaches the target (or a trade prints
-        # there), not merely because the mid crossed it.
+        # sell fills when the BID reaches the target, not merely because
+        # the mid crossed it.
+        #
+        # Do NOT use `last_trade_price` here: it can be an old print from
+        # before the position opened (production 2026-11-02 14:51: a
+        # 0.76 DOWN entry was closed as "SL" at 0.765 because a stale
+        # last trade was <= the 0.646 stop line).  The book/mid is the
+        # current observation; the last-trade cache has no timestamp.
         tp_hit = (
             (best_bid > 0 and best_bid >= pos.tp_price)
-            or (last > 0 and last >= pos.tp_price)
             or (best_bid <= 0 and mid > 0 and mid >= pos.tp_price)
         )
         if tp_hit:
@@ -771,7 +775,6 @@ class SignalTrader:
 
         sl_hit = (
             (best_bid > 0 and best_bid <= pos.sl_price)
-            or (last > 0 and last <= pos.sl_price)
             or (best_bid <= 0 and mid > 0 and mid <= pos.sl_price)
         )
         if sl_hit:
